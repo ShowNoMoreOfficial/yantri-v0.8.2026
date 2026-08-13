@@ -1,0 +1,37 @@
+{
+  "name": "yantri",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yantri — multi-tenant topic-choice engine. A simple REST API called by Daftar workflows.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "prisma generate && tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@google/genai": "^2.17.1",
+    "@hono/node-server": "^1.14.0",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.0.0",
+    "dotenv": "^17.4.2",
+    "hono": "^4.7.0",
+    "pg": "^8.23.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.21.0",
+    "prisma": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

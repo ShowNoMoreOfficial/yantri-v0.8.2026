@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: yantri-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yantri
+      POSTGRES_PASSWORD: yantri
+      POSTGRES_DB: yantri
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - yantri-pgdata:/var/lib/postgresql/data
+
+volumes:
+  yantri-pgdata:

@@ -1,0 +1,62 @@
+// Yantri — the whole database is three tables (PLAN.md §DATA MODEL).
+// Daftar workspace content is the source of truth for published work;
+// Yantri stores only what it decided (Choice) and what came back (Outcome).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String
+  workspaceSlug String   @unique
+  apiKeyHash    String   @unique
+  // niche, edge_weights, four_force_weights, terminal_motive,
+  // transgression_ceiling, register, risk_posture, platform_fit_map
+  brandContext  Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  choices Choice[]
+}
+
+// Every emit — approved or killed. killed=true rows ARE the Kill Log.
+model Choice {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  topic          String
+  source         String? // khabri | manual | daftar-entity | ...
+  platform       String?
+  scores         Json     @default("{}") // { edge, evidence, meaning, headroom, decay, saturation }
+  reasoning      Json     @default("{}") // full auditable block — never emitted bare (handoff N6)
+  verdict        String // approve | re_angle | escalate | refuse
+  confidence     Float    @default(0)
+  killed         Boolean  @default(false)
+  killReason     String?
+  runId          String? // groups candidates scored in one /choose call
+  daftarEntityId String? // back-reference to the Daftar row, once created
+  createdAt      DateTime @default(now())
+
+  outcomes Outcome[]
+
+  @@index([tenantId, createdAt])
+  @@index([runId])
+}
+
+model Outcome {
+  id              String   @id @default(cuid())
+  choiceId        String
+  choice          Choice   @relation(fields: [choiceId], references: [id], onDelete: Cascade)
+  platform        String // x | youtube | blog | ...
+  metrics         Json     @default("{}") // { views, likes, reposts, watch_time, ... }
+  outlierMultiple Float? // metric vs the tenant's own trailing baseline
+  reportedAt      DateTime @default(now())
+
+  @@index([choiceId])
+}
