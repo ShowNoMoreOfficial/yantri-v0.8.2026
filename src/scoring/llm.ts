@@ -22,6 +22,7 @@ export type TopicRead = {
   meaning: { geo: number; culture: number; society: number; power: number };
   emotion: { primary: string; arousal: "high" | "low" };
   form: "single_tweet" | "thread" | "long_form" | "carousel" | "short_form";
+  secondary_forms: ("single_tweet" | "thread" | "long_form" | "carousel" | "short_form")[];
   harm: {
     protected_groups: boolean;
     obscenity_for_shock: boolean;
@@ -86,7 +87,7 @@ SCORE 0–100 on each Meaning force for THIS brand's audience:
 - society: recognition/status/belonging available in engaging with it
 - power: who gains/loses if this is said; the stakes and risk
 
-Also read: the primary emotion + arousal (high-arousal spreads; low does not), the best-fit form, and a survivable re-angle (how to keep the nerve but lose the danger — implication, satire, let-the-subject-speak, show-don't-say). If the topic is dead, say so in "why" and score edge low — do not invent an angle.
+Also read: the primary emotion + arousal (high-arousal spreads; low does not), the best-fit PRIMARY form, plus secondary_forms — every OTHER content type this topic would also carry well (a strong topic often works as thread AND short-form AND carousel; a thin one is single-format — return an empty list then). Do not pad: only forms the topic genuinely suits. And a survivable re-angle (how to keep the nerve but lose the danger — implication, satire, let-the-subject-speak, show-don't-say). If the topic is dead, say so in "why" and score edge low — do not invent an angle.
 
 HARM FLAGS — set true ONLY when the telling inherently requires the harm, never because a topic is merely sensitive or critical:
 - protected_groups: the content DEMEANS a protected group (incl. disability) — not merely mentions or concerns one.
@@ -110,6 +111,9 @@ function normalize(parsed: TopicRead): TopicRead {
     parsed.harm[k] = parsed.harm[k] === true;
   if (parsed.emotion.arousal !== "high" && parsed.emotion.arousal !== "low") parsed.emotion.arousal = "low";
   if (typeof parsed.harm_reason !== "string") parsed.harm_reason = "";
+  const FORMS = ["single_tweet", "thread", "long_form", "carousel", "short_form"];
+  parsed.secondary_forms = (Array.isArray(parsed.secondary_forms) ? parsed.secondary_forms : [])
+    .filter((f) => FORMS.includes(f) && f !== parsed.form) as TopicRead["secondary_forms"];
   return parsed;
 }
 
@@ -151,6 +155,11 @@ const GEMINI_SCHEMA = {
       required: ["primary", "arousal"],
     },
     form: { type: Type.STRING, enum: ["single_tweet", "thread", "long_form", "carousel", "short_form"] },
+    secondary_forms: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING, enum: ["single_tweet", "thread", "long_form", "carousel", "short_form"] },
+      description: "Other content types this topic would ALSO carry well. Empty if single-format.",
+    },
     harm: {
       type: Type.OBJECT,
       properties: {
@@ -163,7 +172,7 @@ const GEMINI_SCHEMA = {
     reangle_suggestion: { type: Type.STRING },
     why: { type: Type.STRING, description: "Two sentences max: why this scores the way it does." },
   },
-  required: ["angle", "edge", "meaning", "emotion", "form", "harm", "harm_reason", "reangle_suggestion", "why"],
+  required: ["angle", "edge", "meaning", "emotion", "form", "secondary_forms", "harm", "harm_reason", "reangle_suggestion", "why"],
 } as const;
 
 async function readViaGemini(tenant: Tenant, topic: string, context?: string): Promise<TopicRead> {
@@ -219,6 +228,7 @@ const OLLAMA_SCHEMA = {
       required: ["primary", "arousal"],
     },
     form: { type: "string", enum: ["single_tweet", "thread", "long_form", "carousel", "short_form"] },
+    secondary_forms: { type: "array", items: { type: "string", enum: ["single_tweet", "thread", "long_form", "carousel", "short_form"] } },
     harm: {
       type: "object",
       properties: {
@@ -231,7 +241,7 @@ const OLLAMA_SCHEMA = {
     reangle_suggestion: { type: "string" },
     why: { type: "string" },
   },
-  required: ["angle", "edge", "meaning", "emotion", "form", "harm", "harm_reason", "reangle_suggestion", "why"],
+  required: ["angle", "edge", "meaning", "emotion", "form", "secondary_forms", "harm", "harm_reason", "reangle_suggestion", "why"],
 };
 
 async function readViaOllama(tenant: Tenant, topic: string, context?: string): Promise<TopicRead> {
@@ -263,6 +273,7 @@ function readViaStub(topic: string): TopicRead {
     meaning: { geo: dim(5), culture: dim(6), society: dim(7), power: dim(8) },
     emotion: { primary: "none (stub)", arousal: "low" },
     form: "single_tweet",
+    secondary_forms: [],
     harm: { protected_groups: false, obscenity_for_shock: false, incitement: false, india_legal: false },
     harm_reason: "",
     reangle_suggestion: "[STUB] no real suggestion — plumbing test only",

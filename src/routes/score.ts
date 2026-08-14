@@ -87,6 +87,7 @@ function compact(choiceId: string, s: ScoredTopic) {
     confidence: s.confidence,
     platform: s.platform,
     platforms: s.platforms,
+    content_types: s.content_types,
     angle: s.reasoning.angle.slice(0, 200),
     form: s.reasoning.form,
     why: s.reasoning.why.slice(0, 300),

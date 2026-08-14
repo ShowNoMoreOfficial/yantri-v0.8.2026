@@ -25,6 +25,8 @@ export type ScoredTopic = {
   platform: string;
   /** Ranked platform recommendations (form-fit, headroom-fitting first). */
   platforms: string[];
+  /** The fan-out (handoff 07): every content type this topic carries, primary first. */
+  content_types: string[];
   scores: {
     edge: number;
     evidence: number;
@@ -166,6 +168,7 @@ export async function scoreTopic(
     flags,
     platform,
     platforms,
+    content_types: [read.form, ...read.secondary_forms],
     scores: { edge, evidence, meaning, headroom, transgression_load: load },
     reasoning: {
       angle: read.angle,
