@@ -91,6 +91,7 @@ function compact(choiceId: string, s: ScoredTopic) {
     angle: s.reasoning.angle.slice(0, 200),
     form: s.reasoning.form,
     why: s.reasoning.why.slice(0, 300),
+    reangle: s.reasoning.reangle_suggestion.slice(0, 300),
     flags: s.flags,
   };
 }
@@ -170,6 +171,7 @@ score.post("/choose", async (c) => {
         confidence: r.confidence,
         angle: r.angle,
         why: r.why,
+        reangle: r.reangle,
         flags: r.flags,
         form: r.form,
         source: r.source ?? "khabri",
