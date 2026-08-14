@@ -265,7 +265,14 @@ tenant's outcome data proves the loops. (Verdict `approve` still lands as a
 1. **X metrics access** — API read tiers are limited/paid. Fallback: Peep scrapes the
    tweet's public page. Decide during Phase 1's measure workflow.
 2. **Moment permission** — not machine-readable. Always emitted as a flag, never a score.
-3. **Search-demand gate** — Peep has `/v08.2026/search` but no keyword-volume pull yet.
-   The demand gate ships blind-off (skipped) until Peep grows the capability.
+3. **Search-demand gate** — Peep has `/v1/search` but no keyword-volume pull yet.
+   The demand gate ships blind-off (skipped) until then. NOT externally blocked —
+   Peep is ours (~/Projects/peep): add the capability, push, redeploy on the VPS
+   when this gate's turn comes (after Measure + Propose). Scope sketch, fitting
+   Peep's scraper nature (no paid APIs): `POST /v1/demand` → { query } →
+   { trend_direction (Google Trends), related_queries (autocomplete/related),
+   serp_presence (who already ranks — doubles as a saturation signal),
+   demand_verdict: rising | steady | dead }. Yantri's step-8 gate and the
+   long-form seo_brief both consume this one endpoint.
 4. **Half-lives & saturation windows** — start as hand-set guesses in `brandContext`,
    corrected by outcomes.
