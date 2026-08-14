@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 import { db } from "../db.js";
@@ -27,7 +28,28 @@ const ChooseBody = z.object({
     .max(25),
   platform: z.string().max(40).optional(),
   top: z.number().int().min(1).max(10).default(5),
+  // When set, each chosen topic is POSTed to this URL (one call per topic) —
+  // the DAFTAR-routes-the-choice shape from the handoff. HMAC-signed if a
+  // secret is given (Daftar's webhook trigger verifies x-webhook-signature).
+  callback_url: z.string().url().max(500).optional(),
+  callback_secret: z.string().max(200).optional(),
 });
+
+async function deliverCallback(url: string, secret: string | undefined, payload: object): Promise<boolean> {
+  const body = JSON.stringify(payload);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (secret) {
+    headers["X-Webhook-Signature"] = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+  }
+  try {
+    const res = await fetch(url, { method: "POST", headers, body });
+    if (!res.ok) console.error(`callback ${url} -> HTTP ${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.error(`callback ${url} failed:`, e instanceof Error ? e.message : e);
+    return false;
+  }
+}
 
 async function persistChoice(
   tenant: Tenant,
@@ -100,7 +122,7 @@ score.post("/choose", async (c) => {
     return c.json({ error: { code: "invalid_request", message: parsed.error.issues[0]?.message ?? "Invalid body." } }, 400);
   }
   const tenant = c.get("tenant");
-  const { candidates, platform, top } = parsed.data;
+  const { candidates, platform, top, callback_url, callback_secret } = parsed.data;
   const runId = crypto.randomUUID();
 
   // Score with bounded concurrency; a single candidate failing doesn't sink the run.
@@ -127,15 +149,39 @@ score.post("/choose", async (c) => {
   );
 
   const ranked = scored
-    .map((r, i) => ({ ...compact(rows[i].id, r.s), topic: r.topic }))
+    .map((r, i) => ({ ...compact(rows[i].id, r.s), topic: r.topic, source: r.source }))
     .sort((a, b) => b.edge - a.edge);
   const chosen = ranked.filter((r) => !["refuse", "kill"].includes(r.verdict)).slice(0, top);
+
+  // Emit each chosen topic to the callback (one POST per topic) — Daftar's
+  // webhook receiver turns each into a proposal row. Failures are logged and
+  // reported, never fatal to the scoring response.
+  let delivered = 0;
+  if (callback_url) {
+    for (const r of chosen) {
+      const ok = await deliverCallback(callback_url, callback_secret, {
+        topic: r.topic,
+        choiceId: r.choiceId,
+        verdict: r.verdict,
+        edge: r.edge,
+        confidence: r.confidence,
+        angle: r.angle,
+        why: r.why,
+        flags: r.flags,
+        form: r.form,
+        source: r.source ?? "khabri",
+        platform: platform ?? "x",
+      });
+      if (ok) delivered++;
+    }
+  }
 
   return c.json({
     runId,
     scored: scored.length,
     failed: candidates.length - scored.length,
     killed: ranked.length - ranked.filter((r) => !["refuse", "kill"].includes(r.verdict)).length,
+    ...(callback_url ? { callback: { delivered, failed: chosen.length - delivered } } : {}),
     chosen: chosen.map((r) => ({
       choiceId: r.choiceId,
       topic: r.topic,
