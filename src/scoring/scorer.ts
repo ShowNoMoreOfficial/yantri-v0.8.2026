@@ -21,6 +21,10 @@ export type ScoredTopic = {
   killReason: string | null;
   confidence: number;
   flags: string[];
+  /** The platform this was scored for — Yantri's pick unless the caller constrained it. */
+  platform: string;
+  /** Ranked platform recommendations (form-fit, headroom-fitting first). */
+  platforms: string[];
   scores: {
     edge: number;
     evidence: number;
@@ -85,10 +89,33 @@ export async function scoreTopic(
 
   // ── Transgression headroom: ceiling × appetite; moment is human ────
   const ceiling = brandCeiling(niche, typeof bc.transgression_ceiling === "number" ? bc.transgression_ceiling : undefined);
-  const appetite = platformAppetite(input.platform);
-  const headroom = Number((ceiling * appetite).toFixed(3));
   // How much this telling leans on transgression to work:
   const load = Number(((read.edge.dare * 0.6 + read.edge.nerve * 0.4) / 100).toFixed(3));
+
+  // ── Platform: Yantri's job (handoff step 10) unless the caller constrains it.
+  // Natural platforms for the form, then prefer those whose appetite can carry
+  // this telling's transgression load.
+  const FORM_PLATFORMS: Record<TopicRead["form"], string[]> = {
+    single_tweet: ["x"],
+    thread: ["x", "linkedin"],
+    long_form: ["blog", "linkedin"],
+    carousel: ["instagram", "linkedin"],
+    short_form: ["youtube", "instagram"],
+  };
+  let platform: string;
+  let platforms: string[];
+  if (input.platform) {
+    platform = input.platform;
+    platforms = [platform];
+  } else {
+    const natural = FORM_PLATFORMS[read.form] ?? ["x"];
+    const fitting = natural.filter((p) => load <= ceiling * platformAppetite(p));
+    platforms = [...fitting, ...natural.filter((p) => !fitting.includes(p))];
+    platform = platforms[0]; // best fit; if none fits, re_angle handles the excess
+  }
+
+  const appetite = platformAppetite(platform);
+  const headroom = Number((ceiling * appetite).toFixed(3));
 
   // ── Confidence: low by design while the ledger is thin ─────────────
   const loopGap = Math.abs(edge - meaning);
@@ -137,6 +164,8 @@ export async function scoreTopic(
     killReason,
     confidence,
     flags,
+    platform,
+    platforms,
     scores: { edge, evidence, meaning, headroom, transgression_load: load },
     reasoning: {
       angle: read.angle,

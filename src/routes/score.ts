@@ -61,7 +61,7 @@ async function persistChoice(
       tenantId: tenant.id,
       topic: input.topic,
       source: input.source ?? null,
-      platform: input.platform ?? null,
+      platform: s.platform,
       scores: s.scores as unknown as Prisma.InputJsonValue,
       reasoning: s.reasoning as unknown as Prisma.InputJsonValue,
       verdict: s.verdict,
@@ -85,6 +85,8 @@ function compact(choiceId: string, s: ScoredTopic) {
     meaning: s.scores.meaning,
     headroom: s.scores.headroom,
     confidence: s.confidence,
+    platform: s.platform,
+    platforms: s.platforms,
     angle: s.reasoning.angle.slice(0, 200),
     form: s.reasoning.form,
     why: s.reasoning.why.slice(0, 300),
@@ -170,7 +172,7 @@ score.post("/choose", async (c) => {
         flags: r.flags,
         form: r.form,
         source: r.source ?? "khabri",
-        platform: platform ?? "x",
+        platform: r.platform,
       });
       if (ok) delivered++;
     }
