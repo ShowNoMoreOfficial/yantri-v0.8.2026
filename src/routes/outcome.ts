@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { db } from "../db.js";
-import { tenantAuth, type TenantEnv } from "../auth.js";
-import type { Prisma } from "../generated/prisma/client.js";
+import { tenantAuth, adminAuth, type TenantEnv } from "../auth.js";
+import { recordOutcome, trailingBaseline, BASELINE_WINDOW } from "../outcomes.js";
+import { measureTick } from "../measure.js";
 
 const OutcomeBody = z.object({
   choiceId: z.string().min(1),
@@ -10,37 +11,52 @@ const OutcomeBody = z.object({
   metrics: z.record(z.string(), z.number()).refine((m) => Object.keys(m).length > 0, "metrics must not be empty"),
 });
 
-/** The metric a platform's baseline is computed on (first present wins). */
-const PRIMARY_METRIC = ["views", "impressions", "plays", "reads"] as const;
-
-function primaryOf(metrics: Record<string, number>): { key: string; value: number } | null {
-  for (const key of PRIMARY_METRIC) {
-    if (typeof metrics[key] === "number") return { key, value: metrics[key] };
-  }
-  return null;
-}
-
-const BASELINE_WINDOW = 20;
-
-/** Trailing average of the primary metric over the tenant's recent outcomes on a platform. */
-async function trailingBaseline(tenantId: string, platform: string, excludeOutcomeId?: string) {
-  const recent = await db.outcome.findMany({
-    where: { platform, choice: { tenantId }, ...(excludeOutcomeId ? { id: { not: excludeOutcomeId } } : {}) },
-    orderBy: { reportedAt: "desc" },
-    take: BASELINE_WINDOW,
-  });
-  const values = recent
-    .map((o) => primaryOf(o.metrics as Record<string, number>))
-    .filter((p): p is NonNullable<typeof p> => p !== null)
-    .map((p) => p.value);
-  if (values.length === 0) return { avg: null as number | null, count: 0 };
-  return { avg: values.reduce((a, b) => a + b, 0) / values.length, count: values.length };
-}
+const PublishedBody = z.object({
+  choiceId: z.string().min(1),
+  url: z.string().url().max(500),
+  platform: z.string().max(40).optional(),
+});
 
 export const outcome = new Hono<TenantEnv>();
-outcome.use("*", tenantAuth);
 
-// The loop-closer. Without this endpoint being called, Yantri never learns.
+// Admin: force a measurement tick now (testing + manual reruns).
+outcome.post("/admin/measure", adminAuth, async (c) => {
+  const result = await measureTick();
+  return c.json(result);
+});
+
+outcome.use("/outcome", tenantAuth);
+outcome.use("/published", tenantAuth);
+outcome.use("/tenants/me/baseline", tenantAuth);
+
+// Daftar reports a publication. The measurer takes it from here.
+outcome.post("/published", async (c) => {
+  const parsed = PublishedBody.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ error: { code: "invalid_request", message: parsed.error.issues[0]?.message ?? "Invalid body." } }, 400);
+  }
+  const tenant = c.get("tenant");
+  const { choiceId, url, platform } = parsed.data;
+
+  const choice = await db.choice.findFirst({ where: { id: choiceId, tenantId: tenant.id } });
+  if (!choice) {
+    return c.json({ error: { code: "not_found", message: "No such choice for this tenant." } }, 404);
+  }
+
+  const updated = await db.choice.update({
+    where: { id: choice.id },
+    data: {
+      publishedUrl: url,
+      publishedAt: new Date(),
+      ...(platform ? { platform } : {}),
+      measureCount: 0,
+    },
+  });
+
+  return c.json({ choiceId: updated.id, publishedUrl: updated.publishedUrl, publishedAt: updated.publishedAt });
+});
+
+// Manual/external metrics report (still supported — e.g. YouTube via Daftar later).
 outcome.post("/outcome", async (c) => {
   const parsed = OutcomeBody.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -54,19 +70,11 @@ outcome.post("/outcome", async (c) => {
     return c.json({ error: { code: "not_found", message: "No such choice for this tenant." } }, 404);
   }
 
-  // Outlier = beats the brand's OWN baseline, never absolute numbers (handoff 04 Layer 2).
-  const baseline = await trailingBaseline(tenant.id, platform);
-  const primary = primaryOf(metrics);
-  const outlierMultiple =
-    primary && baseline.avg && baseline.avg > 0 ? Number((primary.value / baseline.avg).toFixed(2)) : null;
-
-  const row = await db.outcome.create({
-    data: {
-      choiceId: choice.id,
-      platform,
-      metrics: metrics as Prisma.InputJsonValue,
-      outlierMultiple,
-    },
+  const { row, baseline, outlierMultiple } = await recordOutcome({
+    tenantId: tenant.id,
+    choiceId: choice.id,
+    platform,
+    metrics,
   });
 
   return c.json(

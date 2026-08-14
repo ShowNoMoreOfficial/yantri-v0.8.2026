@@ -43,10 +43,18 @@ model Choice {
   daftarEntityId String? // back-reference to the Daftar row, once created
   createdAt      DateTime @default(now())
 
+  // Publication tracking — set by POST /published when Daftar posts the content.
+  // The internal measurer uses these to fetch metrics at T+48h and T+7d.
+  publishedUrl   String?
+  publishedAt    DateTime?
+  measureCount   Int       @default(0)
+  lastMeasuredAt DateTime?
+
   outcomes Outcome[]
 
   @@index([tenantId, createdAt])
   @@index([runId])
+  @@index([publishedAt])
 }
 
 model Outcome {

@@ -70,8 +70,12 @@ function compact(choiceId: string, s: ScoredTopic) {
   };
 }
 
+// Scope auth to this router's own paths — a bare use("*") would swallow every
+// /v08.2026/* request mounted after this router (it shadowed /admin/measure).
 export const score = new Hono<TenantEnv>();
-score.use("*", tenantAuth);
+score.use("/score", tenantAuth);
+score.use("/choose", tenantAuth);
+score.use("/choices/*", tenantAuth);
 
 score.post("/score", async (c) => {
   if (!llmAvailable()) {
